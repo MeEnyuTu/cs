@@ -20,21 +20,24 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
-    // 随机分配电报代号
+    // 随机分配极客代号
     ws.id = Math.floor(100 + Math.random() * 900).toString();
+    
+    // 广播有人上线
     broadcast(JSON.stringify({ type: 'system', text: `[NET] NODE ${ws.id} ONLINE.` }));
 
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
+            // 只转发摩斯电码
             if (data.morse) {
-                // 只转发摩斯电码本身
                 broadcast(JSON.stringify({ type: 'msg', id: ws.id, morse: data.morse }));
             }
         } catch (e) {}
     });
 
     ws.on('close', () => {
+        // 广播有人下线
         broadcast(JSON.stringify({ type: 'system', text: `[NET] NODE ${ws.id} OFFLINE.` }));
     });
 });
@@ -47,4 +50,4 @@ function broadcast(data) {
     });
 }
 
-server.listen(PORT, '0.0.0.0', () => console.log(`[MORSE SERVER] Listening on ${PORT}`));
+server.listen(PORT, '0.0.0.0', () => console.log(`[MORSE SERVER] Listening on port ${PORT}`));

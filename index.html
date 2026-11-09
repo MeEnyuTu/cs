@@ -36,87 +36,113 @@
         }
         #output::-webkit-scrollbar { display: none; }
 
-        .system-msg { color: #080; font-style: italic; }
-        .msg-block { margin-bottom: 10px; }
-        .sender { font-weight: bold; color: #fff; }
-        .morse-code { color: #0f0; letter-spacing: 2px; }
-        .decoded-text { color: #888; font-size: 14px; margin-top: 4px; }
+        .system-msg { color: #080; font-style: italic; font-size: 14px; margin-bottom: 4px;}
+        .msg-block { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px dotted #050;}
+        .sender { font-weight: bold; color: #fff; font-size: 14px;}
+        .morse-code { color: #0f0; letter-spacing: 3px; margin-top: 4px; font-size: 16px;}
+        .decoded-text { color: #66ff66; font-size: 18px; margin-top: 4px; font-weight: bold;}
 
         /* 底部发报区 */
         #input-area {
             border-top: 2px dashed #0f0;
             padding-top: 10px;
-            font-size: 20px;
+            font-size: 18px;
             min-height: 60px;
             display: flex;
-            align-items: center;
+            flex-direction: column;
+            gap: 10px;
         }
-        .prompt { margin-right: 10px; color: #fff; }
-        #current-morse { flex: 1; color: #0f0; letter-spacing: 3px; }
-        .cursor { display: inline-block; width: 12px; height: 20px; background: #0f0; animation: blink 1s step-end infinite; margin-left: 4px; vertical-align: bottom;}
-        @keyframes blink { 50% { opacity: 0; } }
+        
+        .row { display: flex; align-items: center; width: 100%; }
+        
+        .prompt { margin-right: 10px; color: #fff; font-weight: bold; }
+        
+        /* 电报敲击区 */
+        #morse-input-display { flex: 1; color: #0f0; letter-spacing: 3px; word-break: break-all; font-size: 20px;}
+        #preview { background-color: #0f0; color: #000; padding: 2px 6px; font-size: 14px; margin-left: 10px; font-weight: bold; display: none; border-radius: 2px;}
 
-        #hint { font-size: 12px; color: #555; margin-top: 5px; text-align: right; }
+        /* 直连打字区 */
+        #text-input {
+            flex: 1; background: transparent; border: none; border-bottom: 1px solid #050;
+            color: #33ff33; font-family: 'Courier New', Courier, monospace; font-size: 18px;
+            outline: none; text-shadow: 0 0 5px #33ff33;
+        }
+        #text-input::placeholder { color: #050; }
+
+        #hint { font-size: 12px; color: #555; text-align: right; }
     </style>
 </head>
 <body>
 
     <div id="header">
-        <span>[ MORSE TERMINAL V1.0 ]</span>
+        <span>[ MORSE TRANSLATOR TERMINAL ]</span>
         <span id="status">CONNECTING...</span>
     </div>
     
     <div id="output">
-        <div class="system-msg">[SYS] AWAITING INPUT. PRESS [A] FOR DOT, [D] FOR DASH.</div>
+        <div class="system-msg">[SYS] DIRECT TRANSLATOR MODE ENABLED.</div>
+        <div class="system-msg">[SYS] TYPE TEXT BELOW, OR PRESS [A]/[D] TO SEND RAW MORSE.</div>
     </div>
 
     <div id="input-area">
-        <span class="prompt">TX:</span>
-        <span id="current-morse"></span><span class="cursor"></span>
+        <!-- 第一行：电报机敲击模式 -->
+        <div class="row">
+            <span class="prompt">RAW:</span>
+            <span id="morse-input-display"></span>
+            <span id="preview"></span>
+        </div>
+        
+        <!-- 第二行：直连打字模式 -->
+        <div class="row">
+            <span class="prompt">TXT:</span>
+            <input type="text" id="text-input" placeholder="Type normal text and press Enter..." autocomplete="off" autofocus>
+        </div>
     </div>
-    <div id="hint">A = . | D = - | SPACE = NEXT LETTER | ENTER = SEND | BACKSPACE = DELETE</div>
+    <div id="hint">A = . | D = - | Space = Next Letter | Enter on Text Box = Auto Translate & Send</div>
 
     <script>
         const outputDiv = document.getElementById('output');
-        const morseDisplay = document.getElementById('current-morse');
+        const morseDisplay = document.getElementById('morse-input-display');
+        const previewDisplay = document.getElementById('preview');
+        const textInput = document.getElementById('text-input');
         const statusDiv = document.getElementById('status');
 
         let ws;
         let audioCtx;
-        let myMorseBuffer = ""; // 当前正在敲击的摩斯电码
+        let rawMorseBuffer = "";
 
-        // ================= 📖 摩斯密码字典 =================
+        // 终极字典（包含字母、数字、常用标点）
         const morseDict = {
-            '.-': 'A', '-...': 'B', '-.-.': 'C', '-..': 'D', '.': 'E',
-            '..-.': 'F', '--.': 'G', '....': 'H', '..': 'I', '.---': 'J',
-            '-.-': 'K', '.-..': 'L', '--': 'M', '-.': 'N', '---': 'O',
-            '.--.': 'P', '--.-': 'Q', '.-.': 'R', '...': 'S', '-': 'T',
-            '..-': 'U', '...-': 'V', '.--': 'W', '-..-': 'X', '-.--': 'Y',
-            '--..': 'Z', '-----': '0', '.----': '1', '..---': '2', '...--': '3',
-            '....-': '4', '.....': '5', '-....': '6', '--...': '7', '---..': '8',
-            '----.': '9'
+            'A': '.-', 'B': '-...', 'C': '-.-.', 'D': '-..', 'E': '.',
+            'F': '..-.', 'G': '--.', 'H': '....', 'I': '..', 'J': '.---',
+            'K': '-.-', 'L': '.-..', 'M': '--', 'N': '-.', 'O': '---',
+            'P': '.--.', 'Q': '--.-', 'R': '.-.', 'S': '...', 'T': '-',
+            'U': '..-', 'V': '...-', 'W': '.--', 'X': '-..-', 'Y': '-.--', 'Z': '--..',
+            '0': '-----', '1': '.----', '2': '..---', '3': '...--', '4': '....-', '5': '.....',
+            '6': '-....', '7': '--...', '8': '---..', '9': '----.',
+            '.': '.-.-.-', ',': '--..--', '?': '..--..', '!': '-.-.--', '/': '-..-.'
         };
+        // 反转字典供解码用
+        const reverseMorse = {};
+        for (let key in morseDict) {
+            reverseMorse[morseDict[key]] = key;
+        }
 
-        // ================= 🔊 电报音效合成 =================
+        // ================= 🔊 音效 =================
         function initAudio() {
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            }
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
 
         function playBeep(freq = 800, duration = 0.05, type = 'sine', vol = 0.1) {
             if (!audioCtx) return;
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
-            
             osc.type = type;
             osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
             gain.gain.setValueAtTime(vol, audioCtx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
-
             osc.connect(gain);
             gain.connect(audioCtx.destination);
-            
             osc.start();
             osc.stop(audioCtx.currentTime + duration);
         }
@@ -137,69 +163,118 @@
                     appendSystem(data.text);
                     playBeep(400, 0.05);
                 } else if (data.type === 'msg') {
-                    playBeep(1000, 0.08); // 收到消息的长滴声
-                    renderIncomingMessage(data.id, data.morse);
+                    playBeep(1000, 0.08); 
+                    renderIncomingMessage(data.id, data.morse, data.text);
                 }
             };
         }
 
-        // ================= ⌨️ 键盘监听（仅限 A, D, 空格, 回车） =================
+        // ================= ⌨️ 模式 1：A/D 敲电报 =================
         document.addEventListener('keydown', (e) => {
+            // 如果光标在文本框里打字，就不触发电报机模式
+            if (document.activeElement === textInput) return;
+
             initAudio();
-            
-            // 按下 A -> 点
             if (e.key.toLowerCase() === 'a') {
-                myMorseBuffer += ".";
+                rawMorseBuffer += ".";
                 updateMorseDisplay();
-                playBeep(800, 0.06, 'square', 0.1); // 短促高频音
+                playBeep(800, 0.06, 'square', 0.1); 
             } 
-            // 按下 D -> 划
             else if (e.key.toLowerCase() === 'd') {
-                myMorseBuffer += "-";
+                rawMorseBuffer += "-";
                 updateMorseDisplay();
-                playBeep(600, 0.15, 'square', 0.1); // 较长低频音
+                playBeep(600, 0.15, 'square', 0.1); 
             } 
-            // 空格 -> 字母间隔
             else if (e.key === ' ') {
                 e.preventDefault();
-                if (myMorseBuffer && !myMorseBuffer.endsWith(" ")) {
-                    myMorseBuffer += " ";
+                if (rawMorseBuffer && !rawMorseBuffer.endsWith(" ")) {
+                    rawMorseBuffer += " ";
                     updateMorseDisplay();
                     playBeep(400, 0.03);
                 }
             } 
-            // 退格 -> 删除最后一个符号
             else if (e.key === 'Backspace') {
                 e.preventDefault();
-                myMorseBuffer = myMorseBuffer.slice(0, -1);
+                rawMorseBuffer = rawMorseBuffer.slice(0, -1);
                 updateMorseDisplay();
                 playBeep(300, 0.05);
             }
-            // 回车 -> 发送
             else if (e.key === 'Enter') {
                 e.preventDefault();
-                if (myMorseBuffer.trim().length > 0) {
-                    sendMessage();
+                if (rawMorseBuffer.trim().length > 0) {
+                    sendRawMorse();
                 }
             }
         });
 
         function updateMorseDisplay() {
-            morseDisplay.innerText = myMorseBuffer;
+            morseDisplay.innerText = rawMorseBuffer;
+            const currentLetters = rawMorseBuffer.trim().split(/\s+/);
+            const lastLetter = currentLetters[currentLetters.length - 1];
+            
+            if (lastLetter && reverseMorse[lastLetter]) {
+                previewDisplay.style.display = 'inline-block';
+                previewDisplay.innerText = reverseMorse[lastLetter];
+            } else {
+                previewDisplay.style.display = 'none';
+            }
         }
 
-        function sendMessage() {
+        function sendRawMorse() {
             if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ morse: myMorseBuffer }));
+                // 为了兼容，如果用户懂摩斯密码，直接发原始电码
+                let decoded = translateMorseToText(rawMorseBuffer);
+                ws.send(JSON.stringify({ morse: rawMorseBuffer, text: decoded }));
             }
-            // 发报完成的长鸣
             playBeep(1500, 0.2, 'sine', 0.15);
-            myMorseBuffer = "";
+            rawMorseBuffer = "";
             updateMorseDisplay();
         }
 
+        // ================= ⌨️ 模式 2：直连打字翻译 =================
+        textInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                initAudio();
+                const text = textInput.value.trim().toUpperCase();
+                if (!text || ws.readyState !== WebSocket.OPEN) return;
+
+                // 将人类文字直接翻译成摩斯电码
+                const morseStr = textToMorse(text);
+                
+                ws.send(JSON.stringify({ morse: morseStr, text: text }));
+                
+                textInput.value = '';
+                playBeep(1500, 0.2, 'sine', 0.15); // 发报成功音
+            }
+        });
+
+        function textToMorse(text) {
+            let morseResult = "";
+            for (let char of text) {
+                if (morseDict[char]) {
+                    morseResult += morseDict[char] + " ";
+                } else if (char === ' ') {
+                    morseResult += " / "; // 单词间隔
+                }
+            }
+            return morseResult.trim();
+        }
+
+        function translateMorseToText(morseStr) {
+            let result = "";
+            const words = morseStr.trim().split(' / ');
+            for (let word of words) {
+                const letters = word.trim().split(/\s+/);
+                for (let letter of letters) {
+                    if (reverseMorse[letter]) result += reverseMorse[letter];
+                }
+                result += " ";
+            }
+            return result.trim();
+        }
+
         // ================= 📺 渲染收报 =================
-        function renderIncomingMessage(nodeId, morseStr) {
+        function renderIncomingMessage(nodeId, morseStr, originalText) {
             const block = document.createElement('div');
             block.className = 'msg-block';
             
@@ -218,19 +293,20 @@
             block.appendChild(decoded);
             outputDiv.appendChild(block);
 
-            // 打字机效果播报电码
+            // 打字机播报摩斯电码
             let i = 0;
             function typeMorse() {
                 if (i < morseStr.length) {
                     morseCode.innerText += morseStr.charAt(i);
-                    // 每打出一个符号响一声
-                    playBeep(morseStr.charAt(i) === '.' ? 800 : 600, 0.02, 'square', 0.05);
+                    // 遇到 . 和 - 播放滴答声
+                    if (morseStr.charAt(i) === '.') playBeep(800, 0.02, 'square', 0.05);
+                    if (morseStr.charAt(i) === '-') playBeep(600, 0.05, 'square', 0.05);
                     i++;
                     outputDiv.scrollTop = outputDiv.scrollHeight;
-                    setTimeout(typeMorse, 40);
+                    setTimeout(typeMorse, 30);
                 } else {
-                    // 电码播报完毕，显示翻译后的明文
-                    decoded.innerText = `=> ${translateMorse(morseStr)}`;
+                    // 播报完毕后，显示翻译出的明文
+                    decoded.innerText = `=> ${originalText}`;
                     outputDiv.scrollTop = outputDiv.scrollHeight;
                 }
             }
@@ -243,21 +319,6 @@
             div.innerText = text;
             outputDiv.appendChild(div);
             outputDiv.scrollTop = outputDiv.scrollHeight;
-        }
-
-        // ================= 🔠 摩斯解码 =================
-        function translateMorse(morseStr) {
-            let result = "";
-            // 按空格切分每个字母
-            const letters = morseStr.trim().split(/\s+/);
-            for (let letter of letters) {
-                if (morseDict[letter]) {
-                    result += morseDict[letter];
-                } else {
-                    result += "?"; // 无法识别的电码
-                }
-            }
-            return result || "[EMPTY]";
         }
 
         connect();

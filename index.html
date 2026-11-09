@@ -39,8 +39,6 @@
         .system-msg { color: #080; font-style: italic; font-size: 14px; margin-bottom: 4px;}
         .msg-block { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px dotted #050;}
         .sender { font-weight: bold; color: #fff; font-size: 14px;}
-        
-        /* 接收端显示 */
         .morse-code { color: #0f0; letter-spacing: 3px; margin-top: 4px; font-size: 16px;}
         .decoded-text { color: #66ff66; font-size: 20px; margin-top: 4px; font-weight: bold;}
 
@@ -50,15 +48,11 @@
             padding-top: 15px;
             font-size: 22px;
             display: flex;
-            flex-direction: column;
-            gap: 10px;
+            align-items: center;
         }
         
-        .row { display: flex; align-items: center; width: 100%; flex-wrap: wrap;}
         .prompt { margin-right: 10px; color: #fff; font-weight: bold; font-size: 16px;}
-        
-        /* 当前敲击的摩斯码 */
-        #morse-input-display { color: #0f0; letter-spacing: 3px; word-break: break-all;}
+        #morse-input-display { color: #0f0; letter-spacing: 3px; word-break: break-all; flex: 1;}
         
         /* 实时翻译提示框 */
         #preview {
@@ -67,29 +61,32 @@
             display: none; min-width: 30px; text-align: center;
         }
 
-        /* 提示 */
-        #hint { font-size: 12px; color: #555; text-align: right; margin-top: 10px;}
+        #hint { font-size: 12px; color: #555; text-align: right; margin-top: 10px; line-height: 1.4;}
     </style>
 </head>
 <body>
 
     <div id="header">
-        <span>[ MORSE TERMINAL V2.0 ]</span>
+        <span>[ MORSE TERMINAL V3.0 ]</span>
         <span id="status">CONNECTING...</span>
     </div>
     
     <div id="output">
-        <div class="system-msg">[SYS] A = . | D = - | SPACE = NEXT LETTER | ENTER = SEND</div>
+        <div class="system-msg">[SYS] ENTER A/D TO TYPE. USE SPACE TO SEPARATE LETTERS.</div>
     </div>
 
     <div id="input-area">
-        <div class="row">
-            <span class="prompt">TX:</span>
-            <span id="morse-input-display"></span>
-            <span id="preview"></span>
-        </div>
+        <span class="prompt">TX:</span>
+        <span id="morse-input-display"></span>
+        <span id="preview"></span>
     </div>
-    <div id="hint">Press [A] for DOT, [D] for DASH. System will auto-translate.</div>
+    
+    <div id="hint">
+        A = . | D = - <br>
+        [SPACE] = 确认字母 (非常重要) <br>
+        [ENTER] = 发送电报 <br>
+        [BACKSPACE] = 删除
+    </div>
 
     <script>
         const outputDiv = document.getElementById('output');
@@ -99,18 +96,27 @@
 
         let ws;
         let audioCtx;
-        let rawMorseBuffer = ""; // 当前敲击的电码缓冲
+        let rawMorseBuffer = ""; 
 
-        // 摩斯密码字典
+        // 🔥 最全国际标准摩尔斯电码表 (完全对应你截图里的表)
         const morseDict = {
+            // 字母
             '.-': 'A', '-...': 'B', '-.-.': 'C', '-..': 'D', '.': 'E',
             '..-.': 'F', '--.': 'G', '....': 'H', '..': 'I', '.---': 'J',
             '-.-': 'K', '.-..': 'L', '--': 'M', '-.': 'N', '---': 'O',
             '.--.': 'P', '--.-': 'Q', '.-.': 'R', '...': 'S', '-': 'T',
             '..-': 'U', '...-': 'V', '.--': 'W', '-..-': 'X', '-.--': 'Y',
-            '--..': 'Z', '-----': '0', '.----': '1', '..---': '2', '...--': '3',
+            '--..': 'Z',
+            // 数字
+            '-----': '0', '.----': '1', '..---': '2', '...--': '3',
             '....-': '4', '.....': '5', '-....': '6', '--...': '7', '---..': '8',
-            '----.': '9', '.-.-.-': '.', '--..--': ',', '..--..': '?'
+            '----.': '9',
+            // 常用标点
+            '.-.-.-': '.', '--..--': ',', '..--..': '?', '.----.': "'",
+            '-.-.--': '!', '-..-.': '/', '-.--.': '(', '-.--.-': ')',
+            '.-...': '&', '---...': ':', '-.-.-.': ';', '-...-': '=',
+            '.-.-.': '+', '-....-': '-', '..--.-': '_', '.-..-.': '"',
+            '...-..-': '$', '.--.-.': '@'
         };
         
         // 反转字典（用于解码）
@@ -119,7 +125,7 @@
             reverseMorse[morseDict[key]] = key;
         }
 
-        // ================= 🔊 电报音效合成 =================
+        // ================= 🔊 音效 =================
         function initAudio() {
             if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
@@ -138,15 +144,12 @@
             osc.stop(audioCtx.currentTime + duration);
         }
 
-        // ================= 🔌 WebSocket 连接 =================
+        // ================= 🔌 WebSocket =================
         function connect() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${window.location.host}`);
 
-            ws.onopen = () => {
-                statusDiv.innerText = "ONLINE";
-                playBeep(1200, 0.1);
-            };
+            ws.onopen = () => { statusDiv.innerText = "ONLINE"; playBeep(1200, 0.1); };
 
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
@@ -158,30 +161,22 @@
                     renderIncomingMessage(data.id, data.morse);
                 }
             };
-            
-            ws.onclose = () => {
-                statusDiv.innerText = "DISCONNECTED";
-                playBeep(300, 0.2, 'sine', 0.2);
-            };
         }
 
-        // ================= ⌨️ 按键监听 (仅限 A, D, Space, Enter, Backspace) =================
+        // ================= ⌨️ 按键监听 =================
         document.addEventListener('keydown', (e) => {
-            initAudio(); // 首次按键初始化音频
+            initAudio();
             
-            // A 键 -> 滴（点）
             if (e.key.toLowerCase() === 'a') {
                 rawMorseBuffer += ".";
                 updateDisplay();
                 playBeep(800, 0.06, 'square', 0.1); 
             } 
-            // D 键 -> 答（划）
             else if (e.key.toLowerCase() === 'd') {
                 rawMorseBuffer += "-";
                 updateDisplay();
                 playBeep(600, 0.15, 'square', 0.1); 
             } 
-            // 空格 -> 确认一个字母
             else if (e.key === ' ') {
                 e.preventDefault();
                 if (rawMorseBuffer && !rawMorseBuffer.endsWith(" ")) {
@@ -190,14 +185,12 @@
                     playBeep(400, 0.03);
                 }
             } 
-            // 退格 -> 删除
             else if (e.key === 'Backspace') {
                 e.preventDefault();
                 rawMorseBuffer = rawMorseBuffer.slice(0, -1);
                 updateDisplay();
                 playBeep(300, 0.05);
             }
-            // 回车 -> 发射
             else if (e.key === 'Enter') {
                 e.preventDefault();
                 if (rawMorseBuffer.trim().length > 0) {
@@ -206,14 +199,14 @@
             }
         });
 
-        // 更新发报屏幕
         function updateDisplay() {
             morseDisplay.innerText = rawMorseBuffer;
             
-            // 实时预判当前打出的字母
+            // 获取最后一个完整的字母
             const currentLetters = rawMorseBuffer.trim().split(/\s+/);
             const lastLetter = currentLetters[currentLetters.length - 1];
             
+            // 实时显示当前正在敲的字母
             if (lastLetter && reverseMorse[lastLetter]) {
                 previewDisplay.style.display = 'inline-block';
                 previewDisplay.innerText = reverseMorse[lastLetter];
@@ -226,7 +219,7 @@
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ morse: rawMorseBuffer }));
             }
-            playBeep(1500, 0.2, 'sine', 0.15); // 发报完成的长鸣
+            playBeep(1500, 0.2, 'sine', 0.15);
             rawMorseBuffer = "";
             updateDisplay();
         }
@@ -251,7 +244,6 @@
             block.appendChild(decoded);
             outputDiv.appendChild(block);
 
-            // 打字机效果 + 电码音效
             let i = 0;
             function typeMorse() {
                 if (i < morseStr.length) {
@@ -262,7 +254,6 @@
                     outputDiv.scrollTop = outputDiv.scrollHeight;
                     setTimeout(typeMorse, 30);
                 } else {
-                    // 显示解码后的明文
                     decoded.innerText = `=> ${translateMorseToText(morseStr)}`;
                     outputDiv.scrollTop = outputDiv.scrollHeight;
                 }
@@ -282,31 +273,33 @@
         function translateMorseToText(morseStr) {
             let result = "";
             const cleanMorse = morseStr.trim().replace(/\s+/g, ' '); 
-            const letters = cleanMorse.split(' ');
-            
-            let hasError = false;
+            const words = cleanMorse.split(' / '); // 单词按斜杠分 (如果你喜欢按斜杠分单词)
 
-            for (let letter of letters) {
-                if (reverseMorse[letter]) {
-                    result += reverseMorse[letter];
-                } else if (letter !== "") {
-                    result += "?";
-                    hasError = true;
+            for (let word of words) {
+                const letters = word.trim().split(' ');
+                for (let letter of letters) {
+                    if (reverseMorse[letter]) {
+                        result += reverseMorse[letter];
+                    } else if (letter !== "") {
+                        // 如果遇到没有空格的长串，尝试智能拆解
+                        result += trySmartDecode(letter);
+                    }
                 }
+                result += " ";
             }
             
-            // 智能容错：如果没按空格，尝试强行拆解
-            if (hasError && letters.length === 1 && letters[0].length > 5) {
-                return smartDecode(letters[0]);
-            }
-            
-            return result || "[EMPTY]";
+            return result.trim() || "[EMPTY]";
         }
 
-        function smartDecode(longMorse) {
+        // 当用户忘记打空格时，暴力拆解（贪心算法）
+        function trySmartDecode(morseStr) {
+            if (morseStr.length <= 5 && reverseMorse[morseStr]) {
+                return reverseMorse[morseStr];
+            }
+            
             let result = "";
             let temp = "";
-            for (let char of longMorse) {
+            for (let char of morseStr) {
                 temp += char;
                 if (reverseMorse[temp]) {
                     result += reverseMorse[temp];
@@ -316,7 +309,6 @@
             return result + (temp ? "?" : ""); 
         }
 
-        // 启动
         connect();
     </script>
 </body>

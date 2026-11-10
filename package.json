@@ -1,11 +1,25 @@
 {
-  "name": "pure-morse-chat",
-  "version": "1.0.0",
-  "main": "server.js",
+  "name": "telegraph-chat",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A hardcore, real-time Morse code telegraph chat application.",
+  "author": "EnyuTu",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MeEnyuTu/cs.git"
+  },
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "start:prod": "NODE_ENV=production node server.js",
+    "dev": "node --watch server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "ws": "^8.13.0"
+    "ws": "8.18.0"
   }
 }

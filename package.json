@@ -1,6 +1,6 @@
 {
   "name": "telegraph-chat",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "A hardcore, real-time Morse code telegraph chat application.",
   "author": "EnyuTu",
@@ -17,7 +17,7 @@
     "start": "node server.js",
     "start:prod": "NODE_ENV=production node server.js",
     "dev": "node --watch server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --check server.js && node --check client.js"
   },
   "dependencies": {
     "ws": "8.18.0"

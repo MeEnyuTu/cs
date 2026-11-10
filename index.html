@@ -25,12 +25,12 @@
         .system-msg { color: #080; font-style: italic; font-size: 14px; margin-bottom: 4px;}
         .msg-block { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px dotted #050;}
         .sender { font-weight: bold; color: #fff; font-size: 14px;}
-        .morse-code { color: #0f0; letter-spacing: 6px; margin-top: 4px; font-size: 18px;}
+        .morse-code { color: #0f0; letter-spacing: 2px; margin-top: 4px; font-size: 18px;}
         .decoded-text { color: #66ff66; font-size: 22px; margin-top: 4px; font-weight: bold;}
         #input-area { border-top: 2px dashed #0f0; padding-top: 15px; display: flex; flex-direction: column; gap: 10px; }
         .tx-row { display: flex; align-items: center; font-size: 20px;}
         .prompt { margin-right: 10px; color: #fff; font-weight: bold; font-size: 16px; min-width: 50px;}
-        #morse-input-display { color: #0f0; letter-spacing: 6px; word-break: break-all;}
+        #morse-input-display { color: #0f0; letter-spacing: 2px; word-break: break-all;}
         #text-preview-display { color: #66ff66; margin-left: 15px; font-weight: bold; letter-spacing: normal;}
         #hint { font-size: 13px; color: #888; text-align: right; margin-top: 10px; line-height: 1.6;}
         .highlight { color: #fff; background-color: #050; padding: 0 4px; border-radius: 2px;}
@@ -39,7 +39,7 @@
 </head>
 <body>
     <div id="header">
-        <span>[ MORSE TERMINAL V9.4 ]</span>
+        <span>[ MORSE TERMINAL V10.0 ]</span>
         <span id="status">CONNECTING...</span>
     </div>
     <div id="output">
@@ -80,15 +80,13 @@
         let tokenResolved = false;      
         let ignoreUrlToken = false;     
 
+        // 🛡️ 字典：摩斯码 -> 字母
         const morseDict = {
             '.-': 'A', '-...': 'B', '-.-.': 'C', '-..': 'D', '.': 'E', '..-.': 'F', '--.': 'G', '....': 'H', '..': 'I', '.---': 'J',
             '-.-': 'K', '.-..': 'L', '--': 'M', '-.': 'N', '---': 'O', '.--.': 'P', '--.-': 'Q', '.-.': 'R', '...': 'S', '-': 'T',
             '..-': 'U', '...-': 'V', '.--': 'W', '-..-': 'X', '-.--': 'Y', '--..': 'Z', '-----': '0', '.----': '1', '..---': '2',
             '...--': '3', '....-': '4', '.....': '5', '-....': '6', '--...': '7', '---..': '8', '----.': '9'
         };
-
-        const reverseMorse = {};
-        for (let key in morseDict) { reverseMorse[morseDict[key]] = key; }
 
         document.body.addEventListener('click', () => hiddenInput.focus());
         function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
@@ -205,7 +203,6 @@
         }
 
         function sendMessage() {
-            // 🛡️ 修复：ws 可能未定义
             if (!ws || ws.readyState !== WebSocket.OPEN) {
                 appendSystem('[SYS] OFFLINE. MESSAGE NOT SENT.');
                 playBeep(200, 0.3, 'sawtooth', 0.15);
@@ -242,20 +239,24 @@
             outputDiv.appendChild(div); outputDiv.scrollTop = outputDiv.scrollHeight;
         }
 
+        // 🛡️ 修复后的解码器：直接查 morseDict，不再用错误反转的 reverseMorse
         function executeDecode(morseStr) {
             if (!morseStr || morseStr.trim() === "") return "";
             let cleanStr = morseStr.replace(/\s+/g, ' ').trim();
+            
             if (cleanStr.includes(' ')) {
                 let result = ""; 
                 const parts = cleanStr.split(' ');
                 for (let part of parts) {
                     if (!part) continue;
-                    if (reverseMorse[part]) result += reverseMorse[part];
+                    if (morseDict[part]) result += morseDict[part];
                     else result += "?"; 
                 }
                 return result || "[空]";
             }
-            if (reverseMorse[cleanStr]) return reverseMorse[cleanStr];
+            
+            if (morseDict[cleanStr]) return morseDict[cleanStr];
+            
             let result = greedyDecode(cleanStr);
             if (result.endsWith("?")) return result + " (未识别)"; 
             return result;
@@ -265,7 +266,10 @@
             let result = ""; let temp = "";
             for (let char of longPart) {
                 temp += char;
-                if (reverseMorse[temp]) { result += reverseMorse[temp]; temp = ""; }
+                if (morseDict[temp]) { 
+                    result += morseDict[temp]; 
+                    temp = ""; 
+                }
             }
             return result + (temp ? "?" : "");
         }

@@ -43,7 +43,6 @@
         .morse-code { color: #0f0; letter-spacing: 3px; margin-top: 4px; font-size: 16px;}
         .decoded-text { color: #66ff66; font-size: 20px; margin-top: 4px; font-weight: bold;}
 
-        /* 底部发报区 */
         #input-area {
             border-top: 2px dashed #0f0;
             padding-top: 15px;
@@ -55,19 +54,19 @@
         .tx-row { display: flex; align-items: center; font-size: 20px;}
         .prompt { margin-right: 10px; color: #fff; font-weight: bold; font-size: 16px; min-width: 50px;}
         
-        #morse-input-display { color: #0f0; letter-spacing: 3px; word-break: break-all;}
+        #morse-input-display { color: #0f0; letter-spacing: 6px; word-break: break-all;}
         #text-preview-display { color: #66ff66; margin-left: 15px; font-weight: bold; letter-spacing: normal;}
 
-        #hint { font-size: 12px; color: #555; text-align: right; margin-top: 10px; line-height: 1.4;}
+        #hint { font-size: 13px; color: #888; text-align: right; margin-top: 10px; line-height: 1.6;}
+        .highlight { color: #fff; background-color: #050; padding: 0 4px; border-radius: 2px;}
         
-        /* 隐藏输入框，用于防止输入法干扰 */
         #hidden-input { position: absolute; opacity: 0; top: -100px; }
     </style>
 </head>
 <body>
 
     <div id="header">
-        <span>[ MORSE TERMINAL V4.0 - STRICT MODE ]</span>
+        <span>[ MORSE TERMINAL V4.1 ]</span>
         <span id="status">CONNECTING...</span>
     </div>
     
@@ -76,12 +75,10 @@
     </div>
 
     <div id="input-area">
-        <!-- 第一行：电码 -->
         <div class="tx-row">
             <span class="prompt">RAW:</span>
             <span id="morse-input-display"></span>
         </div>
-        <!-- 第二行：实时翻译出的明文（供你发送前检查） -->
         <div class="tx-row">
             <span class="prompt">TXT:</span>
             <span id="text-preview-display"></span>
@@ -89,10 +86,10 @@
     </div>
     
     <div id="hint">
-        A = . | D = - <br>
-        [SPACE] = 确认字母 (必须按) <br>
-        [ENTER] = 发送电报 <br>
-        [BACKSPACE] = 删除
+        <span class="highlight">A</span> = 滴 (.) &nbsp;|&nbsp; <span class="highlight">D</span> = 答 (-) <br>
+        <span class="highlight">空格</span> = 确认一个字母<br>
+        <span class="highlight">回车</span> = 发送电报<br>
+        (💡 连按 3 次 D 就是 O，中间不要加空格！)
     </div>
 
     <input type="text" id="hidden-input" autocomplete="off" autofocus>
@@ -108,7 +105,7 @@
         let audioCtx;
         let rawMorseBuffer = ""; 
 
-        // 🔥 最全国际标准摩尔斯电码表
+        // 🔥 终极字典（支持字母、数字、标点）
         const morseDict = {
             '.-': 'A', '-...': 'B', '-.-.': 'C', '-..': 'D', '.': 'E',
             '..-.': 'F', '--.': 'G', '....': 'H', '..': 'I', '.---': 'J',
@@ -168,9 +165,7 @@
 
         // ⌨️ 核心按键监听
         window.addEventListener('keydown', (e) => {
-            // 拦截输入法冲突
-            if (e.isComposing) return;
-
+            if (e.isComposing) return; // 拦截输入法
             initAudio();
             
             if (e.key.toLowerCase() === 'a') {
@@ -207,23 +202,31 @@
 
         // 更新发报界面预览
         function updateDisplay() {
+            // 安全清洗：过滤掉除了 . - 和 空格 之外的任何奇怪字符
+            rawMorseBuffer = rawMorseBuffer.replace(/[^.\- ]/g, '');
+            
             morseDisplay.innerText = rawMorseBuffer;
             
-            // 实时计算当前打出的明文（带有空格）
+            // 实时计算明文
             const parts = rawMorseBuffer.split(' ');
             let liveText = "";
+            let hasInvalid = false;
+
             for (let i = 0; i < parts.length; i++) {
+                if (parts[i] === "") continue;
+                
                 if (reverseMorse[parts[i]]) {
                     liveText += reverseMorse[parts[i]];
-                } else if (parts[i] !== "") {
-                    liveText += "?"; // 拼错了就显示问号
-                }
-                // 如果是单词中的空格，根据摩斯规范，如果是连续两个空格，就加一个真正的空格
-                if (i < parts.length - 1 && parts[i] === "" && parts[i+1] === "") {
-                    // 这里为了简化，不强制处理单词空格了，用户自己看
+                } else {
+                    liveText += "?";
+                    hasInvalid = true;
                 }
             }
-            textPreview.innerText = liveText;
+            
+            // 如果是纯空格还没打完，就不显示问号
+            if (rawMorseBuffer.trim() === "") hasInvalid = false;
+
+            textPreview.innerText = liveText + (hasInvalid ? " [格式有误]" : "");
         }
 
         function sendMessage() {
@@ -265,7 +268,6 @@
                     outputDiv.scrollTop = outputDiv.scrollHeight;
                     setTimeout(typeMorse, 30);
                 } else {
-                    // 严格翻译：不再智能瞎猜
                     decoded.innerText = `=> ${strictTranslate(morseStr)}`;
                     outputDiv.scrollTop = outputDiv.scrollHeight;
                 }
@@ -281,7 +283,6 @@
             outputDiv.scrollTop = outputDiv.scrollHeight;
         }
 
-        // 🔠 严格翻译（必须要有空格）
         function strictTranslate(morseStr) {
             let result = "";
             const cleanMorse = morseStr.trim().replace(/\s+/g, ' '); 
@@ -299,9 +300,7 @@
                 }
             }
             
-            if (hasError) {
-                return result + " [电码格式有误]";
-            }
+            if (hasError) return result + " [格式有误]";
             return result || "[EMPTY]";
         }
 

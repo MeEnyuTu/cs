@@ -66,12 +66,12 @@
 <body>
 
     <div id="header">
-        <span>[ MORSE TERMINAL V4.1 ]</span>
+        <span>[ MORSE TERMINAL V6.0 ]</span>
         <span id="status">CONNECTING...</span>
     </div>
     
     <div id="output">
-        <div class="system-msg">[SYS] SYSTEM READY. USE [A] FOR DOT, [D] FOR DASH.</div>
+        <div class="system-msg">[SYS] SYSTEM READY. TYPE A/D TO SEND.</div>
     </div>
 
     <div id="input-area">
@@ -87,9 +87,8 @@
     
     <div id="hint">
         <span class="highlight">A</span> = 滴 (.) &nbsp;|&nbsp; <span class="highlight">D</span> = 答 (-) <br>
-        <span class="highlight">空格</span> = 确认一个字母<br>
-        <span class="highlight">回车</span> = 发送电报<br>
-        (💡 连按 3 次 D 就是 O，中间不要加空格！)
+        <span class="highlight">空格</span> = 确认字母间隔<br>
+        <span class="highlight">回车</span> = 发送
     </div>
 
     <input type="text" id="hidden-input" autocomplete="off" autofocus>
@@ -105,7 +104,7 @@
         let audioCtx;
         let rawMorseBuffer = ""; 
 
-        // 🔥 终极字典（支持字母、数字、标点）
+        // 字典
         const morseDict = {
             '.-': 'A', '-...': 'B', '-.-.': 'C', '-..': 'D', '.': 'E',
             '..-.': 'F', '--.': 'G', '....': 'H', '..': 'I', '.---': 'J',
@@ -114,7 +113,7 @@
             '..-': 'U', '...-': 'V', '.--': 'W', '-..-': 'X', '-.--': 'Y',
             '--..': 'Z', '-----': '0', '.----': '1', '..---': '2', '...--': '3',
             '....-': '4', '.....': '5', '-....': '6', '--...': '7', '---..': '8',
-            '----.': '9', '.-.-.-': '.', '--..--': ',', '..--..': '?', '-.-.--': '!'
+            '----.': '9'
         };
         
         const reverseMorse = {};
@@ -122,7 +121,6 @@
             reverseMorse[morseDict[key]] = key;
         }
 
-        // 确保点击屏幕任何地方都能监听键盘
         document.body.addEventListener('click', () => hiddenInput.focus());
 
         // 🔊 音效
@@ -163,9 +161,9 @@
             };
         }
 
-        // ⌨️ 核心按键监听
+        // ⌨️ 按键监听
         window.addEventListener('keydown', (e) => {
-            if (e.isComposing) return; // 拦截输入法
+            if (e.isComposing) return;
             initAudio();
             
             if (e.key.toLowerCase() === 'a') {
@@ -179,7 +177,7 @@
                 playBeep(600, 0.15, 'square', 0.1); 
             } 
             else if (e.key === ' ') {
-                e.preventDefault(); // 阻止页面滚动
+                e.preventDefault();
                 if (rawMorseBuffer && !rawMorseBuffer.endsWith(" ")) {
                     rawMorseBuffer += " ";
                     updateDisplay();
@@ -202,31 +200,13 @@
 
         // 更新发报界面预览
         function updateDisplay() {
-            // 安全清洗：过滤掉除了 . - 和 空格 之外的任何奇怪字符
-            rawMorseBuffer = rawMorseBuffer.replace(/[^.\- ]/g, '');
+            // 暴力清洗：将全角、各种乱七八糟的字符统一转为半角
+            rawMorseBuffer = rawMorseBuffer.replace(/[．。]/g, '.').replace(/[－—－_]/g, '-').replace(/[^.\- ]/g, '');
             
             morseDisplay.innerText = rawMorseBuffer;
             
-            // 实时计算明文
-            const parts = rawMorseBuffer.split(' ');
-            let liveText = "";
-            let hasInvalid = false;
-
-            for (let i = 0; i < parts.length; i++) {
-                if (parts[i] === "") continue;
-                
-                if (reverseMorse[parts[i]]) {
-                    liveText += reverseMorse[parts[i]];
-                } else {
-                    liveText += "?";
-                    hasInvalid = true;
-                }
-            }
-            
-            // 如果是纯空格还没打完，就不显示问号
-            if (rawMorseBuffer.trim() === "") hasInvalid = false;
-
-            textPreview.innerText = liveText + (hasInvalid ? " [格式有误]" : "");
+            // 使用终极稳健算法进行实时预览
+            textPreview.innerText = robustDecode(rawMorseBuffer);
         }
 
         function sendMessage() {
@@ -238,7 +218,7 @@
             updateDisplay();
         }
 
-        // 📺 接收端渲染
+        // 📺 接收端
         function renderIncomingMessage(nodeId, morseStr) {
             const block = document.createElement('div');
             block.className = 'msg-block';
@@ -268,7 +248,7 @@
                     outputDiv.scrollTop = outputDiv.scrollHeight;
                     setTimeout(typeMorse, 30);
                 } else {
-                    decoded.innerText = `=> ${strictTranslate(morseStr)}`;
+                    decoded.innerText = `=> ${robustDecode(morseStr)}`;
                     outputDiv.scrollTop = outputDiv.scrollHeight;
                 }
             }
@@ -283,25 +263,50 @@
             outputDiv.scrollTop = outputDiv.scrollHeight;
         }
 
-        function strictTranslate(morseStr) {
-            let result = "";
-            const cleanMorse = morseStr.trim().replace(/\s+/g, ' '); 
-            const letters = cleanMorse.split(' ');
-            let hasError = false;
+        // ================= 👑 核心：绝对稳健的解码器 =================
+        function robustDecode(morseStr) {
+            // 1. 彻底清理任何奇怪的字符
+            let cleanStr = morseStr
+                .replace(/[．。]/g, '.')
+                .replace(/[－—－_]/g, '-')
+                .replace(/[^.\- ]/g, '') 
+                .replace(/\s+/g, ' ') // 多个空格变成1个
+                .trim();
 
-            for (let letter of letters) {
-                if (letter === "") continue;
+            if (!cleanStr) return "[空]";
+
+            let result = "";
+            // 2. 首选策略：严格按空格切分（因为标准发报必须有空格）
+            const parts = cleanStr.split(' ');
+            
+            let hasFormatError = false;
+
+            for (let part of parts) {
+                if (part === "") continue;
                 
-                if (reverseMorse[letter]) {
-                    result += reverseMorse[letter];
+                if (reverseMorse[part]) {
+                    result += reverseMorse[part];
                 } else {
-                    result += "?";
-                    hasError = true;
+                    // 3. 兜底策略：如果按照空格切出来的片段查不到（说明没按空格连着打），尝试贪心拆解
+                    let decodedPart = "";
+                    let temp = "";
+                    for (let char of part) {
+                        temp += char;
+                        if (reverseMorse[temp]) {
+                            decodedPart += reverseMorse[temp];
+                            temp = "";
+                        }
+                    }
+                    if (temp) {
+                        decodedPart += "?";
+                        hasFormatError = true;
+                    }
+                    result += decodedPart;
                 }
             }
-            
-            if (hasError) return result + " [格式有误]";
-            return result || "[EMPTY]";
+
+            if (hasFormatError) return result + " [格式异常]";
+            return result;
         }
 
         connect();

@@ -40,8 +40,10 @@
         .system-msg { color: #080; font-style: italic; font-size: 14px; margin-bottom: 4px;}
         .msg-block { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px dotted #050;}
         .sender { font-weight: bold; color: #fff; font-size: 14px;}
-        .morse-code { color: #0f0; letter-spacing: 6px; margin-top: 4px; font-size: 18px;}
-        .decoded-text { color: #66ff66; font-size: 22px; margin-top: 4px; font-weight: bold;}
+        
+        /* 🔥 接收端也去掉字间距，让它真实显示 */
+        .morse-code { color: #0f0; margin-top: 4px; font-size: 16px; word-break: break-all;}
+        .decoded-text { color: #66ff66; font-size: 20px; margin-top: 4px; font-weight: bold;}
 
         #input-area {
             border-top: 2px dashed #0f0;
@@ -54,8 +56,10 @@
         .tx-row { display: flex; align-items: center; font-size: 20px;}
         .prompt { margin-right: 10px; color: #fff; font-weight: bold; font-size: 16px; min-width: 50px;}
         
-        #morse-input-display { color: #0f0; letter-spacing: 6px; word-break: break-all;}
-        #text-preview-display { color: #66ff66; margin-left: 15px; font-weight: bold; letter-spacing: normal;}
+        /* 🔥 核心修复：去掉 letter-spacing，让点划连在一起 */
+        #morse-input-display { color: #0f0; word-break: break-all; font-size: 22px;}
+        #text-preview-display { color: #66ff66; margin-left: 15px; font-weight: bold;}
+        #char-count { color: #555; margin-left: 15px; font-size: 14px;}
 
         #hint { font-size: 13px; color: #888; text-align: right; margin-top: 10px; line-height: 1.6;}
         .highlight { color: #fff; background-color: #050; padding: 0 4px; border-radius: 2px;}
@@ -66,18 +70,19 @@
 <body>
 
     <div id="header">
-        <span>[ MORSE TERMINAL V7.0 ]</span>
+        <span>[ MORSE TERMINAL V8.0 ]</span>
         <span id="status">CONNECTING...</span>
     </div>
     
     <div id="output">
-        <div class="system-msg">[SYS] SYSTEM READY. A = DOT, D = DASH.</div>
+        <div class="system-msg">[SYS] SYSTEM READY. NO SPACING ILLUSIONS NOW.</div>
     </div>
 
     <div id="input-area">
         <div class="tx-row">
             <span class="prompt">RAW:</span>
             <span id="morse-input-display"></span>
+            <span id="char-count">(0)</span>
         </div>
         <div class="tx-row">
             <span class="prompt">TXT:</span>
@@ -87,9 +92,9 @@
     
     <div id="hint">
         <span class="highlight">A</span> = 滴 (.) &nbsp;|&nbsp; <span class="highlight">D</span> = 答 (-) <br>
-        <span class="highlight">连按 3 次 A</span> 就是 S (...)，不要加空格<br>
-        <span class="highlight">连按 3 次 D</span> 就是 O (---)，不要加空格<br>
-        <span class="highlight">空格</span> = 确认一个字母结束<br>
+        <span class="highlight">连按 3 次 A</span> 就是 S (...)<br>
+        <span class="highlight">连按 3 次 D</span> 就是 O (---)<br>
+        <span class="highlight">空格</span> = 确认字母间隔 (比如发SOS: 按3下A, 空格, 按3下D, 空格, 按3下A)<br>
         <span class="highlight">回车</span> = 发送
     </div>
 
@@ -99,6 +104,7 @@
         const outputDiv = document.getElementById('output');
         const morseDisplay = document.getElementById('morse-input-display');
         const textPreview = document.getElementById('text-preview-display');
+        const charCountDisplay = document.getElementById('char-count');
         const statusDiv = document.getElementById('status');
         const hiddenInput = document.getElementById('hidden-input');
 
@@ -106,7 +112,6 @@
         let audioCtx;
         let rawMorseBuffer = ""; 
 
-        // 字典
         const morseDict = {
             '.-': 'A', '-...': 'B', '-.-.': 'C', '-..': 'D', '.': 'E',
             '..-.': 'F', '--.': 'G', '....': 'H', '..': 'I', '.---': 'J',
@@ -125,7 +130,6 @@
 
         document.body.addEventListener('click', () => hiddenInput.focus());
 
-        // 🔊 音效
         function initAudio() {
             if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
@@ -144,7 +148,6 @@
             osc.stop(audioCtx.currentTime + duration);
         }
 
-        // 🔌 WebSocket
         function connect() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${window.location.host}`);
@@ -163,7 +166,6 @@
             };
         }
 
-        // ⌨️ 核心按键监听：使用 e.code 彻底屏蔽输入法干扰
         window.addEventListener('keydown', (e) => {
             initAudio();
             
@@ -179,6 +181,7 @@
             } 
             else if (e.code === 'Space') {
                 e.preventDefault();
+                // 只有真正按空格键，才会加入空格
                 if (rawMorseBuffer && !rawMorseBuffer.endsWith(" ")) {
                     rawMorseBuffer += " ";
                     updateDisplay();
@@ -199,12 +202,13 @@
             }
         });
 
-        // 更新发报界面预览
         function updateDisplay() {
-            // 强制清除任何不属于点、划、空格的内容
+            // 过滤非法字符，保留点和划和空格
             rawMorseBuffer = rawMorseBuffer.replace(/[^.\- ]/g, '');
             
             morseDisplay.innerText = rawMorseBuffer;
+            // 显示真实的字符长度，证明没有自动加空格
+            charCountDisplay.innerText = `(Length: ${rawMorseBuffer.length})`;
             textPreview.innerText = executeDecode(rawMorseBuffer);
         }
 
@@ -217,7 +221,6 @@
             updateDisplay();
         }
 
-        // 📺 接收端
         function renderIncomingMessage(nodeId, morseStr) {
             const block = document.createElement('div');
             block.className = 'msg-block';
@@ -266,45 +269,40 @@
         function executeDecode(morseStr) {
             if (!morseStr || morseStr.trim() === "") return "";
             
-            // 把任何连续的空格变成一个
             let cleanStr = morseStr.replace(/\s+/g, ' ').trim();
-            let result = "";
+            
+            // 如果用户连空格都没按，直接发了一长串，我们强制把它当成一个单词去拆分
+            if (!cleanStr.includes(' ') && cleanStr.length > 5) {
+                return greedyDecode(cleanStr);
+            }
 
-            // 如果用户是标准按法（带着空格），按空格切开
+            // 正常情况，按空格切分字母
+            let result = "";
             const parts = cleanStr.split(' ');
             
             for (let part of parts) {
                 if (!part) continue;
-                
                 if (reverseMorse[part]) {
-                    // 字典命中
                     result += reverseMorse[part];
                 } else {
-                    // 如果查不到，比如用户直接粘了 "......" (6个点)
-                    // 尝试强行分割，但这不绝对准确，所以我们标记为未知
                     result += "?"; 
                 }
             }
-
-            // 如果是连续打字没有空格，比如 "...." 这种，查表找不到，走另外一个分支
-            if (parts.length === 1 && !reverseMorse[cleanStr]) {
-                let longPart = cleanStr;
-                result = ""; // 重置结果
-                let temp = "";
-                let isError = false;
-
-                for (let char of longPart) {
-                    temp += char;
-                    if (reverseMorse[temp]) {
-                        result += reverseMorse[temp];
-                        temp = "";
-                    }
-                }
-                if (temp) isError = true; // 说明最后剩下了一小截凑不成字母
-                if (isError) return result + " [输入过长]";
-            }
-
             return result || "[空]";
+        }
+
+        // 贪心解码：当用户完全不按空格时（比如直接连打9个符号），强行猜解
+        function greedyDecode(longPart) {
+            let result = "";
+            let temp = "";
+            for (let char of longPart) {
+                temp += char;
+                if (reverseMorse[temp]) {
+                    result += reverseMorse[temp];
+                    temp = "";
+                }
+            }
+            return result + (temp ? "?" : "");
         }
 
         connect();

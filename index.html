@@ -17,228 +17,213 @@
             overflow: hidden;
             cursor: text;
         }
-
-        #header {
-            border-bottom: 2px dashed #0f0;
-            padding-bottom: 10px;
-            margin-bottom: 10px;
-            font-size: 14px;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        #output {
-            flex: 1;
-            overflow-y: auto;
-            font-size: 18px;
-            line-height: 1.6;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
+        #header { border-bottom: 2px dashed #0f0; padding-bottom: 10px; margin-bottom: 10px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
+        #status button { background:#050;color:#0f0;border:1px solid #0f0;padding:2px 8px;font-family:inherit;font-size:13px;cursor:pointer; }
+        #status button:hover { background:#0a0;color:#000; }
+        #output { flex: 1; overflow-y: auto; font-size: 18px; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }
         #output::-webkit-scrollbar { display: none; }
-
         .system-msg { color: #080; font-style: italic; font-size: 14px; margin-bottom: 4px;}
         .msg-block { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px dotted #050;}
         .sender { font-weight: bold; color: #fff; font-size: 14px;}
-        
-        /* 🔥 接收端也去掉字间距，让它真实显示 */
-        .morse-code { color: #0f0; margin-top: 4px; font-size: 16px; word-break: break-all;}
-        .decoded-text { color: #66ff66; font-size: 20px; margin-top: 4px; font-weight: bold;}
-
-        #input-area {
-            border-top: 2px dashed #0f0;
-            padding-top: 15px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        
+        .morse-code { color: #0f0; letter-spacing: 6px; margin-top: 4px; font-size: 18px;}
+        .decoded-text { color: #66ff66; font-size: 22px; margin-top: 4px; font-weight: bold;}
+        #input-area { border-top: 2px dashed #0f0; padding-top: 15px; display: flex; flex-direction: column; gap: 10px; }
         .tx-row { display: flex; align-items: center; font-size: 20px;}
         .prompt { margin-right: 10px; color: #fff; font-weight: bold; font-size: 16px; min-width: 50px;}
-        
-        /* 🔥 核心修复：去掉 letter-spacing，让点划连在一起 */
-        #morse-input-display { color: #0f0; word-break: break-all; font-size: 22px;}
-        #text-preview-display { color: #66ff66; margin-left: 15px; font-weight: bold;}
-        #char-count { color: #555; margin-left: 15px; font-size: 14px;}
-
+        #morse-input-display { color: #0f0; letter-spacing: 6px; word-break: break-all;}
+        #text-preview-display { color: #66ff66; margin-left: 15px; font-weight: bold; letter-spacing: normal;}
         #hint { font-size: 13px; color: #888; text-align: right; margin-top: 10px; line-height: 1.6;}
         .highlight { color: #fff; background-color: #050; padding: 0 4px; border-radius: 2px;}
-        
         #hidden-input { position: absolute; opacity: 0; top: -100px; }
     </style>
 </head>
 <body>
-
     <div id="header">
-        <span>[ MORSE TERMINAL V8.0 ]</span>
+        <span>[ MORSE TERMINAL V9.3 ]</span>
         <span id="status">CONNECTING...</span>
     </div>
-    
     <div id="output">
-        <div class="system-msg">[SYS] SYSTEM READY. NO SPACING ILLUSIONS NOW.</div>
+        <div class="system-msg">[SYS] SYSTEM READY. A = DOT, D = DASH.</div>
     </div>
-
     <div id="input-area">
         <div class="tx-row">
             <span class="prompt">RAW:</span>
             <span id="morse-input-display"></span>
-            <span id="char-count">(0)</span>
         </div>
         <div class="tx-row">
             <span class="prompt">TXT:</span>
             <span id="text-preview-display"></span>
         </div>
     </div>
-    
     <div id="hint">
         <span class="highlight">A</span> = 滴 (.) &nbsp;|&nbsp; <span class="highlight">D</span> = 答 (-) <br>
-        <span class="highlight">连按 3 次 A</span> 就是 S (...)<br>
-        <span class="highlight">连按 3 次 D</span> 就是 O (---)<br>
-        <span class="highlight">空格</span> = 确认字母间隔 (比如发SOS: 按3下A, 空格, 按3下D, 空格, 按3下A)<br>
+        <span class="highlight">连按 3 次 A</span> 就是 S (...)，不要加空格<br>
+        <span class="highlight">连按 3 次 D</span> 就是 O (---)，不要加空格<br>
+        <span class="highlight">空格</span> = 确认字母结束<br>
         <span class="highlight">回车</span> = 发送
     </div>
-
     <input type="text" id="hidden-input" autocomplete="off" autofocus>
-
     <script>
         const outputDiv = document.getElementById('output');
         const morseDisplay = document.getElementById('morse-input-display');
         const textPreview = document.getElementById('text-preview-display');
-        const charCountDisplay = document.getElementById('char-count');
         const statusDiv = document.getElementById('status');
         const hiddenInput = document.getElementById('hidden-input');
 
         let ws;
         let audioCtx;
-        let rawMorseBuffer = ""; 
+        let rawMorseBuffer = "";
+        let reconnectDelay = 1000;
+        const MAX_RECONNECT_DELAY = 30000;
+        let intentionalClose = false;
+        let consecutiveFailures = 0;
+        let tokenResolved = false;
+        let ignoreUrlToken = false;
 
         const morseDict = {
-            '.-': 'A', '-...': 'B', '-.-.': 'C', '-..': 'D', '.': 'E',
-            '..-.': 'F', '--.': 'G', '....': 'H', '..': 'I', '.---': 'J',
-            '-.-': 'K', '.-..': 'L', '--': 'M', '-.': 'N', '---': 'O',
-            '.--.': 'P', '--.-': 'Q', '.-.': 'R', '...': 'S', '-': 'T',
-            '..-': 'U', '...-': 'V', '.--': 'W', '-..-': 'X', '-.--': 'Y',
-            '--..': 'Z', '-----': '0', '.----': '1', '..---': '2', '...--': '3',
-            '....-': '4', '.....': '5', '-....': '6', '--...': '7', '---..': '8',
-            '----.': '9'
+            '.-': 'A', '-...': 'B', '-.-.': 'C', '-..': 'D', '.': 'E', '..-.': 'F', '--.': 'G', '....': 'H', '..': 'I', '.---': 'J',
+            '-.-': 'K', '.-..': 'L', '--': 'M', '-.': 'N', '---': 'O', '.--.': 'P', '--.-': 'Q', '.-.': 'R', '...': 'S', '-': 'T',
+            '..-': 'U', '...-': 'V', '.--': 'W', '-..-': 'X', '-.--': 'Y', '--..': 'Z', '-----': '0', '.----': '1', '..---': '2',
+            '...--': '3', '....-': '4', '.....': '5', '-....': '6', '--...': '7', '---..': '8', '----.': '9'
         };
-        
+
         const reverseMorse = {};
-        for (let key in morseDict) {
-            reverseMorse[morseDict[key]] = key;
-        }
+        for (let key in morseDict) { reverseMorse[morseDict[key]] = key; }
 
         document.body.addEventListener('click', () => hiddenInput.focus());
-
-        function initAudio() {
-            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-
+        function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
         function playBeep(freq = 800, duration = 0.05, type = 'sine', vol = 0.1) {
             if (!audioCtx) return;
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.type = type;
-            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+            osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
             gain.gain.setValueAtTime(vol, audioCtx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            osc.start();
-            osc.stop(audioCtx.currentTime + duration);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + duration);
+        }
+
+        // 🛡️ 无 token 时显示按钮，点击才 prompt（用户手势，避免被浏览器拦截）
+        function showTokenPrompt() {
+            statusDiv.innerHTML = '';
+            const btn = document.createElement('button');
+            btn.innerText = '输入令牌 / 直接连接';
+            btn.onclick = () => {
+                consecutiveFailures = 0;
+                const t = prompt('接入令牌 (留空 = 公开模式，取消 = 不连接):');
+                if (t === null) {
+                    // 🛡️ 用户取消：保持按钮，不连接
+                    tokenResolved = false;
+                    showTokenPrompt();
+                    return;
+                }
+                tokenResolved = true;
+                if (t) localStorage.setItem('ws_token', t);
+                else localStorage.removeItem('ws_token');
+                statusDiv.innerText = 'CONNECTING...';
+                connect();
+            };
+            statusDiv.appendChild(btn);
         }
 
         function connect() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(`${protocol}//${window.location.host}`);
+            const host = window.location.host;
 
-            ws.onopen = () => { statusDiv.innerText = "ONLINE"; playBeep(1200, 0.1); };
+            const params = new URLSearchParams(location.search);
+            const urlToken = ignoreUrlToken ? null : params.get('token');
+            const token = urlToken || localStorage.getItem('ws_token');
 
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                if (data.type === 'system') {
-                    appendSystem(data.text);
-                    playBeep(400, 0.05);
-                } else if (data.type === 'msg') {
-                    playBeep(1000, 0.08); 
-                    renderIncomingMessage(data.id, data.morse);
+            // 🛡️ 无 token 且未处理过：等用户手势，不自动 prompt
+            if (!token && !tokenResolved) {
+                showTokenPrompt();
+                return;
+            }
+
+            const protocols = token ? ['morse-v1', `token-${token}`] : ['morse-v1'];
+            try {
+                ws = new WebSocket(`${protocol}//${host}`, protocols);
+            } catch (e) {
+                appendSystem('[SYS] FAILED TO CREATE WEBSOCKET: ' + e.message);
+                statusDiv.innerText = 'ERROR';
+                return;
+            }
+
+            ws.onopen = () => {
+                statusDiv.innerText = "ONLINE";
+                reconnectDelay = 1000;
+                consecutiveFailures = 0;
+                playBeep(1200, 0.1);
+                if (rawMorseBuffer) {
+                    appendSystem('[SYS] RECONNECTED. YOUR MESSAGE IS STILL IN BUFFER.');
                 }
             };
+            ws.onmessage = (event) => {
+                let data;
+                try { data = JSON.parse(event.data); } catch (e) { return; }
+                if (data.type === 'system') { appendSystem(data.text); playBeep(400, 0.05); }
+                else if (data.type === 'msg') { playBeep(1000, 0.08); renderIncomingMessage(data.id, data.morse); }
+            };
+            ws.onclose = () => {
+                statusDiv.innerText = "OFFLINE";
+                if (intentionalClose) return;
+                consecutiveFailures++;
+                if (consecutiveFailures >= 5) {
+                    localStorage.removeItem('ws_token');
+                    ignoreUrlToken = true;
+                    tokenResolved = false;
+                    appendSystem('[SYS] 连续 5 次连接失败，已清除本地令牌。请重新输入。');
+                    showTokenPrompt();
+                    return;
+                }
+                appendSystem(`[SYS] DISCONNECTED. RECONNECTING IN ${reconnectDelay / 1000}S...`);
+                setTimeout(connect, reconnectDelay);
+                reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
+            };
+            ws.onerror = () => { statusDiv.innerText = "ERROR"; };
         }
 
         window.addEventListener('keydown', (e) => {
+            if (e.isComposing) return;
             initAudio();
-            
-            if (e.code === 'KeyA') {
-                rawMorseBuffer += ".";
-                updateDisplay();
-                playBeep(800, 0.06, 'square', 0.1); 
-            } 
-            else if (e.code === 'KeyD') {
-                rawMorseBuffer += "-";
-                updateDisplay();
-                playBeep(600, 0.15, 'square', 0.1); 
-            } 
+            if (e.code === 'KeyA') { rawMorseBuffer += "."; updateDisplay(); playBeep(800, 0.06, 'square', 0.1); }
+            else if (e.code === 'KeyD') { rawMorseBuffer += "-"; updateDisplay(); playBeep(600, 0.15, 'square', 0.1); }
             else if (e.code === 'Space') {
                 e.preventDefault();
-                // 只有真正按空格键，才会加入空格
-                if (rawMorseBuffer && !rawMorseBuffer.endsWith(" ")) {
-                    rawMorseBuffer += " ";
-                    updateDisplay();
-                    playBeep(400, 0.03);
-                }
-            } 
+                if (rawMorseBuffer && !rawMorseBuffer.endsWith(" ")) { rawMorseBuffer += " "; updateDisplay(); playBeep(400, 0.03); }
+            }
             else if (e.code === 'Backspace') {
-                e.preventDefault();
-                rawMorseBuffer = rawMorseBuffer.slice(0, -1);
-                updateDisplay();
-                playBeep(300, 0.05);
+                e.preventDefault(); rawMorseBuffer = rawMorseBuffer.slice(0, -1); updateDisplay(); playBeep(300, 0.05);
             }
             else if (e.code === 'Enter') {
                 e.preventDefault();
-                if (rawMorseBuffer.trim().length > 0) {
-                    sendMessage();
-                }
+                if (rawMorseBuffer.trim().length > 0) { sendMessage(); }
             }
         });
 
         function updateDisplay() {
-            // 过滤非法字符，保留点和划和空格
-            rawMorseBuffer = rawMorseBuffer.replace(/[^.\- ]/g, '');
-            
+            rawMorseBuffer = rawMorseBuffer.replace(/[．。]/g, '.').replace(/[－—_]/g, '-').replace(/[^.\- ]/g, '');
             morseDisplay.innerText = rawMorseBuffer;
-            // 显示真实的字符长度，证明没有自动加空格
-            charCountDisplay.innerText = `(Length: ${rawMorseBuffer.length})`;
             textPreview.innerText = executeDecode(rawMorseBuffer);
         }
 
         function sendMessage() {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ morse: rawMorseBuffer }));
+            // 🛡️ ws 可能尚未创建（首次无 token、未点按钮），必须守卫
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                appendSystem('[SYS] OFFLINE. MESSAGE NOT SENT.');
+                playBeep(200, 0.3, 'sawtooth', 0.15);
+                return;
             }
+            ws.send(JSON.stringify({ morse: rawMorseBuffer }));
             playBeep(1500, 0.2, 'sine', 0.15);
-            rawMorseBuffer = "";
-            updateDisplay();
+            rawMorseBuffer = ""; updateDisplay();
         }
 
         function renderIncomingMessage(nodeId, morseStr) {
-            const block = document.createElement('div');
-            block.className = 'msg-block';
-            
-            const sender = document.createElement('div');
-            sender.className = 'sender';
-            sender.innerText = `[NODE ${nodeId}]`;
-            
-            const morseCode = document.createElement('div');
-            morseCode.className = 'morse-code';
-            
-            const decoded = document.createElement('div');
-            decoded.className = 'decoded-text';
-            
-            block.appendChild(sender);
-            block.appendChild(morseCode);
-            block.appendChild(decoded);
-            outputDiv.appendChild(block);
+            const block = document.createElement('div'); block.className = 'msg-block';
+            const sender = document.createElement('div'); sender.className = 'sender'; sender.innerText = `[NODE ${nodeId}]`;
+            const morseCode = document.createElement('div'); morseCode.className = 'morse-code';
+            const decoded = document.createElement('div'); decoded.className = 'decoded-text';
+            block.appendChild(sender); block.appendChild(morseCode); block.appendChild(decoded); outputDiv.appendChild(block);
 
             let i = 0;
             function typeMorse() {
@@ -246,65 +231,40 @@
                     morseCode.innerText += morseStr.charAt(i);
                     if (morseStr.charAt(i) === '.') playBeep(800, 0.02, 'square', 0.05);
                     if (morseStr.charAt(i) === '-') playBeep(600, 0.05, 'square', 0.05);
-                    i++;
-                    outputDiv.scrollTop = outputDiv.scrollHeight;
-                    setTimeout(typeMorse, 30);
+                    i++; outputDiv.scrollTop = outputDiv.scrollHeight; setTimeout(typeMorse, 30);
                 } else {
-                    decoded.innerText = `=> ${executeDecode(morseStr)}`;
-                    outputDiv.scrollTop = outputDiv.scrollHeight;
+                    decoded.innerText = `=> ${executeDecode(morseStr)}`; outputDiv.scrollTop = outputDiv.scrollHeight;
                 }
             }
             typeMorse();
         }
 
         function appendSystem(text) {
-            const div = document.createElement('div');
-            div.className = 'system-msg';
-            div.innerText = text;
-            outputDiv.appendChild(div);
-            outputDiv.scrollTop = outputDiv.scrollHeight;
+            const div = document.createElement('div'); div.className = 'system-msg'; div.innerText = text;
+            outputDiv.appendChild(div); outputDiv.scrollTop = outputDiv.scrollHeight;
         }
 
-        // ================= 👑 终极解码逻辑 =================
         function executeDecode(morseStr) {
             if (!morseStr || morseStr.trim() === "") return "";
-            
             let cleanStr = morseStr.replace(/\s+/g, ' ').trim();
-            
-            // 如果用户连空格都没按，直接发了一长串，我们强制把它当成一个单词去拆分
-            if (!cleanStr.includes(' ') && cleanStr.length > 5) {
-                return greedyDecode(cleanStr);
-            }
-
-            // 正常情况，按空格切分字母
-            let result = "";
-            const parts = cleanStr.split(' ');
-            
+            if (!cleanStr.includes(' ') && cleanStr.length > 5) { return greedyDecode(cleanStr); }
+            let result = ""; const parts = cleanStr.split(' ');
             for (let part of parts) {
                 if (!part) continue;
-                if (reverseMorse[part]) {
-                    result += reverseMorse[part];
-                } else {
-                    result += "?"; 
-                }
+                if (reverseMorse[part]) result += reverseMorse[part];
+                else result += "?";
             }
             return result || "[空]";
         }
 
-        // 贪心解码：当用户完全不按空格时（比如直接连打9个符号），强行猜解
         function greedyDecode(longPart) {
-            let result = "";
-            let temp = "";
+            let result = ""; let temp = "";
             for (let char of longPart) {
                 temp += char;
-                if (reverseMorse[temp]) {
-                    result += reverseMorse[temp];
-                    temp = "";
-                }
+                if (reverseMorse[temp]) { result += reverseMorse[temp]; temp = ""; }
             }
             return result + (temp ? "?" : "");
         }
-
         connect();
     </script>
 </body>

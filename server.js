@@ -42,7 +42,6 @@ const server = http.createServer((req, res) => {
         const host = req.headers.host || 'localhost';
         const url = new URL(req.url, `http://${host}`);
 
-        // 🛡️ 拒绝 absolute-form request target（防代理场景下 Host 不一致）
         if (url.host !== host) {
             res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
             res.end('Bad Request'); return;
@@ -86,7 +85,6 @@ server.on('error', (err) => {
 const wss = new WebSocket.Server({
     server,
     maxPayload: MAX_PAYLOAD_SIZE,
-    // 🛡️ 只回选 morse-v1，绝不回选 token-xxx（凭证不进响应头）
     handleProtocols: (protocols) => protocols.has('morse-v1') ? 'morse-v1' : false,
     verifyClient: (info, cb) => {
         let reqUrl;
@@ -102,7 +100,6 @@ const wss = new WebSocket.Server({
         const tokenFromProtocol = protocols.find(p => p.startsWith('token-'))?.slice(6);
         const token = tokenFromQuery || tokenFromProtocol;
 
-        // 🛡️ 强制 Token 模式
         if (REQUIRE_TOKEN) {
             if (!token) {
                 return cb(false, 401, 'Token required');
@@ -117,7 +114,6 @@ const wss = new WebSocket.Server({
             return cb(false, 401, 'Invalid Token');
         }
 
-        // 🛡️ 宽松模式
         if (WS_TOKEN && token) {
             try {
                 const a = Buffer.from(String(token));
@@ -157,7 +153,6 @@ wss.on('error', (err) => {
     }
 });
 
-// 🛡️ 心跳检测
 const interval = setInterval(() => {
     const toTerminate = [];
     wss.clients.forEach((ws) => {
@@ -182,7 +177,6 @@ interval.unref();
 
 wss.on('close', () => clearInterval(interval));
 
-// ================= 连接逻辑 =================
 wss.on('connection', (ws) => {
     ws.isAlive = true;
     ws.closed = false;
@@ -249,7 +243,6 @@ wss.on('connection', (ws) => {
     });
 });
 
-// 🛡️ 广播函数
 let sendFailures = 0;
 function broadcast(data, excludeWs = null) {
     const toTerminate = [];
@@ -282,7 +275,6 @@ function broadcast(data, excludeWs = null) {
     }
 }
 
-// ================= 优雅停机 =================
 let isShuttingDown = false;
 function shutdown(signal) {
     if (isShuttingDown) return;
@@ -324,7 +316,6 @@ function shutdown(signal) {
     }, 10000).unref();
 }
 
-// ================= 进程级异常兜底 =================
 const rejectionTimestamps = [];
 const REJECTION_WINDOW_MS = 60 * 1000;
 const REJECTION_MAX = 10;
@@ -351,7 +342,6 @@ process.on('uncaughtException', (err) => {
 process.once('SIGTERM', () => shutdown('SIGTERM'));
 process.once('SIGINT', () => shutdown('SIGINT'));
 
-// ================= 启动 =================
 server.listen(PORT, '0.0.0.0', () => {
     const actualPort = server.address().port;
     console.log(`[TELEGRAPH SERVER] Listening on port ${actualPort}`);

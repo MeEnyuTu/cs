@@ -39,7 +39,7 @@
 </head>
 <body>
     <div id="header">
-        <span>[ MORSE TERMINAL V9.3 ]</span>
+        <span>[ MORSE TERMINAL V9.4 ]</span>
         <span id="status">CONNECTING...</span>
     </div>
     <div id="output">
@@ -75,10 +75,10 @@
         let rawMorseBuffer = "";
         let reconnectDelay = 1000;
         const MAX_RECONNECT_DELAY = 30000;
-        let intentionalClose = false;
-        let consecutiveFailures = 0;
-        let tokenResolved = false;
-        let ignoreUrlToken = false;
+        let intentionalClose = false;   
+        let consecutiveFailures = 0;    
+        let tokenResolved = false;      
+        let ignoreUrlToken = false;     
 
         const morseDict = {
             '.-': 'A', '-...': 'B', '-.-.': 'C', '-..': 'D', '.': 'E', '..-.': 'F', '--.': 'G', '....': 'H', '..': 'I', '.---': 'J',
@@ -102,21 +102,20 @@
             osc.start(); osc.stop(audioCtx.currentTime + duration);
         }
 
-        // 🛡️ 无 token 时显示按钮，点击才 prompt（用户手势，避免被浏览器拦截）
         function showTokenPrompt() {
             statusDiv.innerHTML = '';
             const btn = document.createElement('button');
             btn.innerText = '输入令牌 / 直接连接';
             btn.onclick = () => {
+                tokenResolved = true;
                 consecutiveFailures = 0;
                 const t = prompt('接入令牌 (留空 = 公开模式，取消 = 不连接):');
                 if (t === null) {
-                    // 🛡️ 用户取消：保持按钮，不连接
+                    statusDiv.innerText = 'IDLE';
                     tokenResolved = false;
                     showTokenPrompt();
                     return;
                 }
-                tokenResolved = true;
                 if (t) localStorage.setItem('ws_token', t);
                 else localStorage.removeItem('ws_token');
                 statusDiv.innerText = 'CONNECTING...';
@@ -133,7 +132,6 @@
             const urlToken = ignoreUrlToken ? null : params.get('token');
             const token = urlToken || localStorage.getItem('ws_token');
 
-            // 🛡️ 无 token 且未处理过：等用户手势，不自动 prompt
             if (!token && !tokenResolved) {
                 showTokenPrompt();
                 return;
@@ -150,8 +148,8 @@
 
             ws.onopen = () => {
                 statusDiv.innerText = "ONLINE";
-                reconnectDelay = 1000;
-                consecutiveFailures = 0;
+                reconnectDelay = 1000;          
+                consecutiveFailures = 0;        
                 playBeep(1200, 0.1);
                 if (rawMorseBuffer) {
                     appendSystem('[SYS] RECONNECTED. YOUR MESSAGE IS STILL IN BUFFER.');
@@ -169,7 +167,7 @@
                 consecutiveFailures++;
                 if (consecutiveFailures >= 5) {
                     localStorage.removeItem('ws_token');
-                    ignoreUrlToken = true;
+                    ignoreUrlToken = true;      
                     tokenResolved = false;
                     appendSystem('[SYS] 连续 5 次连接失败，已清除本地令牌。请重新输入。');
                     showTokenPrompt();
@@ -207,7 +205,7 @@
         }
 
         function sendMessage() {
-            // 🛡️ ws 可能尚未创建（首次无 token、未点按钮），必须守卫
+            // 🛡️ 修复：ws 可能未定义
             if (!ws || ws.readyState !== WebSocket.OPEN) {
                 appendSystem('[SYS] OFFLINE. MESSAGE NOT SENT.');
                 playBeep(200, 0.3, 'sawtooth', 0.15);
@@ -247,14 +245,20 @@
         function executeDecode(morseStr) {
             if (!morseStr || morseStr.trim() === "") return "";
             let cleanStr = morseStr.replace(/\s+/g, ' ').trim();
-            if (!cleanStr.includes(' ') && cleanStr.length > 5) { return greedyDecode(cleanStr); }
-            let result = ""; const parts = cleanStr.split(' ');
-            for (let part of parts) {
-                if (!part) continue;
-                if (reverseMorse[part]) result += reverseMorse[part];
-                else result += "?";
+            if (cleanStr.includes(' ')) {
+                let result = ""; 
+                const parts = cleanStr.split(' ');
+                for (let part of parts) {
+                    if (!part) continue;
+                    if (reverseMorse[part]) result += reverseMorse[part];
+                    else result += "?"; 
+                }
+                return result || "[空]";
             }
-            return result || "[空]";
+            if (reverseMorse[cleanStr]) return reverseMorse[cleanStr];
+            let result = greedyDecode(cleanStr);
+            if (result.endsWith("?")) return result + " (未识别)"; 
+            return result;
         }
 
         function greedyDecode(longPart) {
